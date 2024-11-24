@@ -71,7 +71,18 @@ class Equipment:
         }
 
         self.status = {
-            '': ['']
+            'Вводится в эксплуатацию': ['Вводится в эксплуатацию'],
+            'В эксплуатации': ['В эксплуатации'],
+            'работает неправильно': ['работает неправильно'],
+            'Сломана': ['Сломана'],
+            'В заявке на ремонт': ['В заявке на ремонт'],
+            'Подготовлена к списанию (акт)': ['Подготовлена к списанию (акт)'],
+            'Списана': ['Списана']
+        }
+
+        self.delete_menu = {
+            'Уникальный номер': ['Уникальный номер'],
+            'Номер (код) объекта учета (инвентарный или иной)': ['Номер (код) объекта учета (инвентарный или иной)']
         }
             
     def generate_unique_number(self, category):
@@ -145,7 +156,6 @@ class Equipment:
         return qr_code_filename
 
     def get_row_by_qrcode(self, qrcode_number):
-        """Retrieve a row from the database using the unique QR code number."""
         conn = sqlite3.connect('equipmts.db')
         cursor = conn.cursor()
         
@@ -157,7 +167,6 @@ class Equipment:
         return row 
     
     def get_item_by_accounting_code(self, accounting_code):
-        """Retrieve an item from the database using the accounting code."""
         conn = sqlite3.connect('equipmts.db')
         cursor = conn.cursor()
         
@@ -208,44 +217,151 @@ class Equipment:
         conn.close()
 
         return rows
+    
+    def query_delete_results(self, unique_id, clear_callback):
+        conn = sqlite3.connect('equipmts.db')
+        cursor = conn.cursor()
+
+        try:
+            # SQL-запрос для удаления записи по уникальному номеру
+            sql_query = "DELETE FROM inventory WHERE [Уникальный номер] = ?"
+            cursor.execute(sql_query, (unique_id,))
+            conn.commit()
+
+            # Уведомление об успешном удалении
+            messagebox.showinfo("Успех", f"Запись с уникальным номером {unique_id} успешно удалена.")
+            
+            # Очищаем результаты поиска
+            clear_callback()
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+
+    def main_delete_results(self, identifier, clear_callback, remove_window, by_unique_id=True):
+        conn = sqlite3.connect('equipmts.db')
+        cursor = conn.cursor()
+
+        try:
+            if by_unique_id:
+                # SQL-запрос для удаления записи по уникальному номеру
+                sql_query = "DELETE FROM inventory WHERE [Уникальный номер] = ?"
+            else:
+                # SQL-запрос для удаления записи по номеру объекта
+                sql_query = "DELETE FROM inventory WHERE [Номер (код) объекта учета (инвентарный или иной)] = ?"
+
+            cursor.execute(sql_query, (identifier,))
+            conn.commit()
+
+            # Уведомление об успешном удалении
+            messagebox.showinfo("Успех", f"Запись с идентификатором {identifier} успешно удалена.")
+            
+            # Очищаем результаты поиска
+            clear_callback()
+
+            remove_window.destroy()
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при удалении записи: {e}")
+        finally:
+            cursor.close()
+            conn.close()
 
 class EquipmentApp:
+
+    # Основное окно системы
     def __init__(self, root):
         self.root = root
         self.root.title("Сканер QRcode")
+
+        # Получаем размеры экрана
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        # Устанавливаем размеры окна равными размерам экрана
+        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+
+        # Отключаем возможность изменения размера окна
+        self.root.resizable(False, False)
+
         self.equipment = Equipment()
 
-        # Создаем фрейм для центрирования элементов
+        # Создаем фрейм для центрирования элементов 
         self.main_frame = tk.Frame(root)
         self.main_frame.grid(row=0, column=0, sticky='nsew')  # Занимает всю ширину и высоту
 
         # Настройка растяжения строк и столбцов
-        self.main_frame.columnconfigure(0, weight=1)
-        self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.columnconfigure(0, weight=1)  # Для ввода и кнопок
+        self.main_frame.columnconfigure(1, weight=2)  # Для поля вывода данных
 
+        # Поле для ввода уникального номера QR-кода
         self.qr_input_label = tk.Label(self.main_frame, text="Введите уникальный номер QR-кода:")
-        self.qr_input_label.grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.qr_input_label.grid(row=0, column=0, padx=5, pady=5, sticky='e')
 
         self.qr_input = tk.Entry(self.main_frame)
-        self.qr_input.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+        self.qr_input.grid(row=0, column=1, padx=5, pady=5, sticky='w')
         
         self.qr_input.bind("<Return>", self.on_enter)
 
-        self.result_frame = tk.Frame(self.main_frame)
-        self.result_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        self.qr_input.focus_set()
 
+        # Кнопки
         self.query_button = tk.Button(self.main_frame, text="Задать запрос по QR-коду", command=self.get_data_by_qr)
-        self.query_button.grid(row=3, column=0, columnspan=2, pady=10)
+        self.query_button.grid(row=1, column=0, columnspan=2, pady=5)
 
         self.add_button = tk.Button(self.main_frame, text="Добавить новые данные", command=self.open_add_data_window)
-        self.add_button.grid(row=4, column=0, columnspan=2, pady=10)
+        self.add_button.grid(row=2, column=0, columnspan=2, pady=5)
 
         self.search_employee_button = tk.Button(self.main_frame, text="Поиск по сотруднику", command=self.open_employee_search)
-        self.search_employee_button.grid(row=5, column=0, columnspan=2, pady=10)
+        self.search_employee_button.grid(row=3, column=0, columnspan=2, pady=5)
 
         self.search_room_button = tk.Button(self.main_frame, text="Поиск по номеру кабинета", command=self.open_room_search)
-        self.search_room_button.grid(row=6, column=0, columnspan=2, pady=10)
+        self.search_room_button.grid(row=4, column=0, columnspan=2, pady=5)
 
+        self.main_remove_button = tk.Button(self.main_frame, text="Удалить запись", command=self.main_delete_results)
+        self.main_remove_button.grid(row=5, column=0, columnspan=2, pady=5)
+
+        # Поле для вывода данных об объектах
+        self.output_text = tk.Text(self.main_frame, wrap=tk.WORD, height=30)
+        self.output_text.grid(row=0, column=2, rowspan=6, padx=5, pady=5, sticky='nsew')
+
+    # Удаление записи с отдельной кнопки
+
+    def main_delete_results(self):
+        self.remove_window = tk.Toplevel(self.root)
+        self.remove_window.title("Удаление записи")
+
+        tk.Label(self.remove_window, text="Выберите признак:").grid(row=0, column=0, padx=5, pady=5)
+        self.selected_attribute = tk.StringVar(value=list(self.equipment.delete_menu.keys())[0])
+        attribute_menu = tk.OptionMenu(self.remove_window, self.selected_attribute, *self.equipment.delete_menu.keys())
+        attribute_menu.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(self.remove_window, text="Введите номер:").grid(row=1, column=0, padx=5, pady=5)
+        self.number_entry = tk.Entry(self.remove_window)
+        self.number_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        self.number_entry.bind('<Return>', lambda event: self.main_confirm_delete())
+
+        delete_button = tk.Button(self.remove_window, text="Удалить", command=self.main_confirm_delete)
+        delete_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+    def main_confirm_delete(self):
+        selected_attribute = self.selected_attribute.get()
+        number = self.number_entry.get().strip()
+
+        if not number:
+            messagebox.showwarning("Предупреждение", "Пожалуйста, введите номер для удаления.")
+            return
+
+        message = f"Вы уверены, что хотите удалить запись с {selected_attribute.lower()} {number}?"
+
+        if messagebox.askyesno("Подтверждение удаления", message):
+            by_unique_id = selected_attribute == 'Уникальный номер'
+            self.equipment.main_delete_results(number, self.clear_results, self.remove_window, by_unique_id=by_unique_id)
+
+    def query_confirm_delete(self, unique_id):
+        if messagebox.askyesno("Подтверждение удаления", f"Вы уверены, что хотите удалить запись с уникальным номером {unique_id}?"):
+            self.equipment.query_delete_results(unique_id, self.clear_results)
 
     def open_employee_search(self):
         employee_keys = list(self.equipment.employees.keys())  # Convert to list
@@ -280,7 +396,6 @@ class EquipmentApp:
 
 
     def get_data_by_qr(self):
-        """Retrieve data from the database using the QR code number."""
         qrcode_number = self.qr_input.get().strip()
         if not qrcode_number:
             messagebox.showwarning("Предупреждение", "Пожалуйста, введите QR-код.")
@@ -328,16 +443,19 @@ class EquipmentApp:
             qr_code_button = tk.Button(self.result_frame, text="Посмотреть QR-код", command=lambda: self.show_qr_code(qr_code))
             qr_code_button.grid(row=len(data), column=0, columnspan=2, pady=10)
 
+            delete_button = tk.Button(self.result_frame, text="Удалить запись из БД", command=lambda: self.query_confirm_delete(qrcode_number))
+            delete_button.grid(row=len(data) + 1, column=0, columnspan=1, pady=10, sticky='w')
+        
             # Добавляем кнопку для очистки результатов
-            clear_button = tk.Button(self.result_frame, text="Очистить", command=self.clear_results)
-            clear_button.grid(row=len(data) + 1, column=0, columnspan=2, pady=10)
+            clear_button = tk.Button(self.result_frame, text="Очистить поиск", command=self.clear_results)
+            clear_button.grid(row=len(data) + 1, column=1, columnspan=1, pady=10, sticky='e')
+
 
         else:
             no_record_label = tk.Label(self.result_frame, text="Запись не найдена.")
             no_record_label.grid(row=0, column=0, columnspan=2, pady=10)
 
     def clear_results(self):
-        """Очистить результаты запроса."""
         for widget in self.result_frame.winfo_children():
             widget.destroy()
         self.qr_input.delete(0, tk.END)
@@ -609,15 +727,20 @@ class EquipmentApp:
             messagebox.showwarning("Предупреждение", "Объект не найден.")
 
     def on_enter(self, event):
-        """Обработчик события нажатия клавиши Enter."""
         self.clear_results()  # Очищаем предыдущие результаты
         self.get_data_by_qr()  # Выполняем запрос по QR-коду
 
     def clear_results(self):
-        """Очистить результаты запроса."""
         for widget in self.result_frame.winfo_children():
             widget.destroy()
         self.result_frame.config(height=5, width=5) 
+
+    def toggle_fullscreen(self, event=None):
+        current_state = self.root.attributes('-fullscreen')
+        self.root.attributes('-fullscreen', not current_state)
+
+    def on_resize(self, event):
+        self.root.attributes('-fullscreen', True)
 
 if __name__ == "__main__":
     root = tk.Tk()
